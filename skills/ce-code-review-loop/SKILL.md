@@ -35,6 +35,7 @@ fi
 - Record the branch, frozen merge-base SHA, and **immutable starting HEAD**; never overwrite the starting HEAD in run state. Any later branch drift, unexpected HEAD drift, or tree change outside the active loop-owned remediation cycle is concurrent user work: preserve it and stop.
 - `plan:<path>` must be readable when supplied and is forwarded unchanged to every canonical wave.
 - `max-work-units:N` is optional. Default: `16`. It must be an integer of 2 or greater, with no upper bound. Invalid or conflicting input fails before the first wave with a populated `Non-converged` envelope.
+- Before preflight, ask once whether this invocation may hand a converged result to a **dedicated publishing workflow** for push or pull-request creation. This is the startup **publication authority** gate. Default to `local-only` when the user declines, the question cannot be asked, or the invocation is non-interactive without explicit publication authority in the original request. Record the answer for the invocation; never ask again at completion.
 
 Use the bundled deterministic helper for the Git mechanics it owns; do not improvise them. Every helper call is a fresh shell-tool invocation, so make it self-contained with this exact prefix and append exactly one operation from the table:
 
@@ -82,7 +83,7 @@ If the callable mechanism is absent or explicitly reports that the canonical ski
 - Product or design choices, public compatibility decisions, migration or rollout policy, unavailable external authority, and behavior not provable from repository evidence are decision-bearing blockers; do not guess through them. Return `Non-converged` with bounded decision context.
 - Independent mechanical families may be committed before stopping for a decision blocker, but their completion never waives that blocker.
 - Mutation is limited to the active defect family and its necessary callers, tests, fixtures, types, and contract documentation. Create exactly one **local commit** per verified family, normally `fix(review): <root cause>` or the repository's nearest valid convention.
-- Never push, rebase, create a worktree, check out another branch, amend, squash, open a PR, file a ticket, or rewrite remediation commits.
+- This loop must **never push** and must **never create or update a pull request**. It also never rebase, create a worktree, check out another branch, amend, squash, file a ticket, or rewrite remediation commits. Without affirmative startup confirmation, finish local-only. With affirmative startup confirmation, successful convergence may be handed to a dedicated publishing workflow; that workflow, not this loop, owns any push or PR action.
 - Do not ask the user to bless incomplete reviewer coverage, stale evidence, malformed receipts, or a dirty/concurrently changed tree. Those are non-waivable failures.
 - A decision-bearing finding is never resolved inside this invocation. Return `Non-converged` with bounded decision context so the user can make the decision outside this invocation, then rerun the loop. This invocation never turns a decision-bearing item or later user reply into automatic repair authority.
 

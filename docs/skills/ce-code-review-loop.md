@@ -39,6 +39,8 @@ The loop is intentionally narrower: it operates only on the current clean local 
 
 A global review wave consumes one work unit. A defect-family remediation cycle also consumes one, including a discarded cycle. The budget limits work; it never proves convergence.
 
+Before preflight, the loop asks once whether a converged result may be handed to a dedicated publishing workflow. The safe default is local-only: a declined, unavailable, or non-interactive confirmation grants no publication authority. The loop never pushes and never creates or updates a pull request itself. An affirmative startup answer only permits a post-convergence handoff to the separate publishing workflow; the question is not deferred until work is already complete.
+
 ## Protocol
 
 1. **Preflight the checkout.** Require a current local branch with no staged, unstaged, or untracked changes. Reject detached HEAD, PR numbers, PR URLs, and branch targets. Resolve and freeze the base SHA and starting HEAD.

@@ -320,6 +320,20 @@ describe("ce-code-review-loop contract", () => {
     expect(authority).toContain("local commit")
     expect(authority).toContain("fix(review):")
   })
+
+  test("requires startup confirmation before any publication handoff", async () => {
+    const skill = await readFile(skillPath, "utf8")
+    const input = section(skill, "## Input and Preflight", "## Workflow")
+    const authority = section(skill, "## Authority and Interaction", "## Circuit Breaker")
+
+    expect(input).toMatch(/before preflight/i)
+    expect(input).toContain("publication authority")
+    expect(input).toContain("local-only")
+    expect(authority).toContain("never push")
+    expect(authority).toContain("never create or update a pull request")
+    expect(authority).toContain("dedicated publishing workflow")
+    expect(authority).toContain("startup confirmation")
+  })
   test("uses the bundled deterministic helper for preflight and review validation", async () => {
     const skill = await readFile(skillPath, "utf8")
     const protocol = await readFile(protocolPath, "utf8")

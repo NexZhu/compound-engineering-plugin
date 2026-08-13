@@ -26,6 +26,8 @@ Use plain [`ce-doc-review`](./ce-doc-review.md) for a first review of a single-c
 
 `max-work-units` defaults to `16`. A caller-supplied value accepts any integer of `2` or greater, with no upper bound. One global review wave and one defect-family remediation cycle each consume a unit, including a wave or cycle discarded on validation mismatch.
 
+Before Wave 0, the loop asks once whether a converged result may be handed to a dedicated publishing workflow. The safe default is local-only: a declined, unavailable, or non-interactive confirmation grants no publication authority. The loop never pushes and never creates or updates a pull request itself. An affirmative startup answer only permits a post-convergence handoff to the separate publishing workflow.
+
 ## Protocol
 
 1. **Prepare once:** initialize a secure fresh run with the bundled stock-Node helper, freeze the document, capture its SHA-256 and physical target identity, inventory and classify its contracts, build a Contract Matrix, and add a Change-Impact Graph, stable vertical slices, and proof obligations when the document is multi-contract or connected impact emerges.

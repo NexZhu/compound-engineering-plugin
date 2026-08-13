@@ -65,6 +65,20 @@ describe("ce-doc-review-loop contract", () => {
     expect(pass1).toContain("is not evidence that the skill is unregistered")
   })
 
+  test("requires startup confirmation before any publication handoff", async () => {
+    const skill = await readFile(skillPath, "utf8")
+    const input = section(skill, "## Input and Mode", "## Workflow")
+    const interaction = section(skill, "## Interaction Rules", "## Circuit Breaker")
+
+    expect(input).toContain("before Wave 0")
+    expect(input).toContain("publication authority")
+    expect(input).toContain("local-only")
+    expect(interaction).toContain("never push")
+    expect(interaction).toContain("never create or update a pull request")
+    expect(interaction).toContain("dedicated publishing workflow")
+    expect(interaction).toContain("startup confirmation")
+  })
+
   test("prepares contract coverage before the first review wave", async () => {
     const protocol = await readFile(protocolPath, "utf8")
     const wave0 = section(protocol, "## Wave 0", "## Pass 1")

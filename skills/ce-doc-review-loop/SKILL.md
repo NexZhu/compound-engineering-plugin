@@ -33,6 +33,7 @@ fi
 - Optional `max-work-units:N` sets a circuit breaker. Default: `16`. `N` must be an integer of 2 or greater, with no upper bound; invalid values fail clearly before Wave 0 and return the `Non-converged` envelope with `input: invalid_max_work_units`, `loop_protocol: not_run`, and `ce-doc-review: not_run`.
 - Strip `max-work-units:N` and the caller's document path before invoking `ce-doc-review`; always pass `mode:non-interactive` and the disposable snapshot path.
 - Review markdown documents only. For HTML or another format, return the `Non-converged` envelope with `input: unsupported_document_format`, `loop_protocol: not_run`, and `ce-doc-review: not_run`.
+- Before Wave 0, ask once whether this invocation may hand a converged result to a **dedicated publishing workflow** for push or pull-request creation. This is the startup **publication authority** gate. Default to `local-only` when the user declines, the question cannot be asked, or `mode:non-interactive` is active without explicit publication authority in the original invocation. Record the answer for the invocation; never ask again at completion.
 
 ## Workflow
 
@@ -50,6 +51,7 @@ Resolve `references/loop-protocol.md` and `scripts/loop-state.mjs` relative to t
 - Interactive loop: use the platform's blocking-question capability for unresolved `gated_auto`, `manual`, or product decisions. If unavailable, present bounded numbered choices in chat and wait. If the runtime cannot pause for input, preserve the decision as a blocker and return `Non-converged`.
 - Non-interactive loop: do not guess. Keep unresolved decisions as blockers and return `Non-converged`.
 - A user may explicitly accept a bounded residual only when it names the affected contract or proof, impact boundary, owner, expiry or review trigger, and fail-closed behavior. Record it durably in the Contract Matrix and run ledger, bind it to the current fingerprint, and state which specific matrix cell, graph edge, or proof obligation it satisfies. Required in-process reviewer failures, timeouts, malformed returns, and missing caller-receipt fields are non-waivable coverage blockers. Optional cross-model peer failures remain report-only unless `ce-doc-review` explicitly classifies the peer as required.
+- This loop itself must **never push** and must **never create or update a pull request**. Without affirmative startup confirmation, finish local-only and report the product path and evidence. With affirmative startup confirmation, a successful convergence result may be handed to a dedicated publishing workflow; that workflow, not this loop, owns any push or PR action.
 
 ## Circuit Breaker
 
