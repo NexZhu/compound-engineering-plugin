@@ -1027,8 +1027,8 @@ fi</code></pre>
       <aside class="callout callout-warn"><svg class="callout-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-warn"/></svg><div class="callout-body"><p class="callout-title">参数转发：只剥循环自己的参数</p><p>调用 <code>ce-doc-review</code> 前，剥掉 <code>max-work-units:N</code> 和调用者给的文档路径；但<strong>必须始终传</strong> <code>mode:non-interactive</code> 和临时快照路径。把 <code>mode:non-interactive</code> 一起剥掉会让每一轮变成交互式，破坏整个循环的前提。</p></div></aside>
 
       <h2 id="workflow">完整工作流</h2>
-      <p>先从当前 <code>SKILL.md</code> 所在目录解析并读取 <code>references/loop-protocol.md</code>，然后按顺序执行。文件缺失或不可读时，返回 <code>Non-converged</code>，写明 <code>loop_protocol: unavailable</code> 和实际原因。正式 <code>ce-doc-review</code> 只能通过宿主的可调用技能机制启动；这是<strong>内部调用通道</strong>。<code>/ce-doc-review</code> 和 <code>$ce-doc-review</code> 只属于<strong>面向用户的交接文本</strong>，绝不能通过 shell、终端、命令解析器或普通文本派发来执行。若误执行后收到 <code>Unknown command</code>，应记录 <code>ce-doc-review: invocation_adapter_error</code>；这不能证明技能未注册。只有可调用机制不存在或明确报告技能不可用时，才记录 <code>skill_unreachable</code>。通用任务、内联角色审查或自制审查都不能替代正式技能。</p>
-      <aside class="callout callout-info"><svg class="callout-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"/></svg><div class="callout-body"><p class="callout-title">内部调用和用户交接必须分开</p><p>可调用机制明确不可用时记录 <code>ce-doc-review: skill_unreachable</code>；命令解析器拒绝 slash/dollar 形式时记录 <code>ce-doc-review: invocation_adapter_error</code>。两种情况都要返回 <code>Non-converged</code>，并打印用户可直接复制的调用块 <code>/ce-doc-review mode:non-interactive &lt;product-path&gt;</code>（仅 Codex 用 <code>$</code> 前缀）。这个块只用于输出交接，循环本身不能执行它，也不能降级成跳过审查继续运行。</p></div></aside>
+      <p>先从当前 <code>SKILL.md</code> 所在目录解析 <code>references/loop-protocol.md</code> 和 <code>scripts/loop-state.mjs</code>。正式审查只走一条合格路线：优先宿主直接可调用技能机制；不可用时，可用一个宿主原生 child/isolated runner 加载并调用正式 <code>ce-doc-review</code>。runner 只是调用适配器，不能复制 prompt、角色或审查流程。<code>/ce-doc-review</code> 与 <code>$ce-doc-review</code> 仍只是输出给用户的交接文本。</p>
+      <aside class="callout callout-info"><svg class="callout-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"/></svg><div class="callout-body"><p class="callout-title">单路线、单派发</p><p>派发前无路线合格时记录 <code>ce-doc-review: skill_unreachable</code>；命令解析误用记录 <code>invocation_adapter_error</code>。一旦派发可能已经开始，绝不重试或切换路线；运行、超时、传输、截断、实际技能/参数或 framing 错误都记录 <code>invocation_execution_failure</code>。</p></div></aside>
       <figure class="diagram"><pre class="mermaid">
 flowchart TD
   W0["Wave 0：冻结与建模"] --> P1["Pass 1：正式全量审查"]
@@ -1045,7 +1045,7 @@ flowchart TD
       </pre><figcaption class="diagram-caption">校验失败的轮次也要消耗一个工作单元，因此熔断器一定会生效。</figcaption></figure>
       <div class="timeline">
       <article class="step"><div class="step-num">0</div><div class="step-body"><h3>Wave 0：冻结输入并建立覆盖模型</h3><p>冻结原始 Markdown 字节并记录指纹。盘点所有规范性陈述、明确要求、合同、交叉引用和证明义务。只有当它们共享同一权威来源、生命周期和证明边界时，文档才算单合同；否则算多合同。</p><p>始终建立 Contract Matrix，把每个盘点项映射到单元格；任何未映射项都是阻塞项。多合同文档还要建立 Change-Impact Graph、稳定纵向切片和证明义务；单合同文档在出现跨合同边或相邻修复影响时再补这些结构。</p></div></article>
-      <article class="step"><div class="step-num">1</div><div class="step-body"><h3>Pass 1：在一次性快照上做正式审查</h3><p>把冻结字节写入一次性快照，调用 <code>ce-doc-review mode:non-interactive &lt;snapshot-path&gt;</code>。收据必须包含两个指纹、已选择和已完成的审查者、失败/超时/格式错误审查者、文档改动修复数量和终止状态。</p><p>调用者计算冻结快照到结果快照的精确差异，并把每个变化的 hunk 按 section 归属到某条 <code>Applied N fixes</code> 记录。只有全部核对一致时，才提交产品路径。缺陷按两类分流：<strong>完整性失败</strong>丢弃快照且绝不碰产品路径；<strong>覆盖缺口</strong>可以提交已验证字节，但这一轮不算干净轮次、不能用于收敛。可选跨模型同伴失败两类都不属于，只作报告。两种情况都照样消耗一个工作单元。</p></div></article>
+      <article class="step"><div class="step-num">1</div><div class="step-body"><h3>Pass 1：在一次性快照上调用正式技能</h3><p>精确调用 <code>ce-doc-review mode:non-interactive &lt;snapshot-path&gt;</code>。优先直接 callable route；否则只允许一个加载正式技能的宿主原生 runner。验证完整 opening/closing marker 和 producer-owned 收据：<code>reviewed_fingerprint</code>、<code>result_fingerprint</code>、<code>selected_reviewers</code>、<code>required_reviewers</code>、完成/失败结果、修复数量、终态和修复归属。<code>required_reviewers</code> 必须是 selected 的子集，不能根据名字猜必需性。提交前重新计算快照和产品指纹，任何不一致都丢弃结果。</p></div></article>
       <article class="step"><div class="step-num">2</div><div class="step-body"><h3>Pass 2：按缺陷家族集中修复</h3><p>只处理引用证据和章节标题仍与已验证结果快照相符的问题。每个缺陷家族开始前，确认产品路径仍匹配最新指纹；在一次性快照中暂存机械性改动，并记录完整前后差异。</p><p>只有保持产品行为、范围、优先级和既定决定不变的证据支持型机械改动可以自动提交。涉及行为、范围、优先级、产品形态或既定决定的差异必须由用户明确决定。提交后重新计算指纹，并刷新或重验全部适用覆盖工件。</p></div></article>
       <article class="step"><div class="step-num">3</div><div class="step-body"><h3>后续轮次：先关邻域，再做全量门禁</h3><p>先用聚焦证据检查关闭受影响切片及图上相连的邻居，然后在新的临时快照上运行正式的全量 <code>ce-doc-review</code> 门禁。正式子技能没有“只审一个切片”的调用契约，局部检查不能冒充正式审查轮次。</p></div></article>
       <article class="step"><div class="step-num">4</div><div class="step-body"><h3>最终门禁</h3><p>按 <code>references/loop-protocol.md</code> 的「最终收敛门禁」执行。通常需要一份全新的全量临时快照审查；如果 Pass 1 一处修复都没应用，它已经审过最终字节，可直接充当门禁。只要结果指纹不是那个未变化的最终指纹，就开启一轮修复周期，并要求再做一次最终审查。</p></div></article>
@@ -1067,7 +1067,7 @@ Open contract cells: &lt;list&gt;
 Unreviewed remediation neighborhoods: &lt;list&gt;
 Reviewer coverage gaps: &lt;list&gt;
 loop_protocol: &lt;available, unavailable + reason, or not_run&gt;
-ce-doc-review: &lt;complete, integrity_failure, skill_unreachable, invocation_adapter_error, or not_run&gt;
+ce-doc-review: &lt;complete, integrity_failure, skill_unreachable, invocation_adapter_error, invocation_execution_failure, or not_run&gt;
 Unresolved decisions: &lt;list&gt;
 Next bounded wave: &lt;slice + graph-connected neighbors + required ce-doc-review gate; the copyable ce-doc-review handoff when the skill is unreachable or the invocation adapter fails; or the corrected invocation when Input is not valid or loop_protocol is not available&gt;</code></pre>
 

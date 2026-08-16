@@ -251,43 +251,17 @@ function atomicWriteJson(file, value) {
     throw error
   }
 }
-function processAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false
-  try { process.kill(pid, 0); return true } catch (error) { return error?.code === "EPERM" }
-}
 
 function withStateTransitionClaim(stateFile, action) {
   const original = resolve(stateFile)
-  const directory = dirname(original)
-  const prefix = `${original.split(sep).pop()}.transition.`
   const claim = `${original}.transition.${process.pid}.${randomUUID()}`
   let owned = false
-  let reclaimed = false
   try {
     try {
       renameSync(original, claim)
       owned = true
-    } catch (error) {
-      if (error?.code !== "ENOENT") return { status: "transition_conflict" }
-      const candidates = readdirSync(directory).filter((entry) => entry.startsWith(prefix)).sort()
-      if (candidates.length !== 1) return { status: "transition_conflict" }
-      const existing = resolve(directory, candidates[0])
-      const ownerPid = Number(candidates[0].slice(prefix.length).split(".", 1)[0])
-      const stat = lstatSync(existing)
-      const ownerStartMs = stat.birthtimeMs || stat.ctimeMs
-      if (processAlive(ownerPid) && Date.now() - ownerStartMs < 86_400_000) return { status: "transition_conflict" }
-      try { renameSync(existing, claim) } catch { return { status: "transition_conflict" } }
-      owned = true
-      reclaimed = true
-    }
-    if (owned && reclaimed) {
-      const claimedState = readJson(claim)
-      if (claimedState && ["blocked", "canceled", "abandoned", "scope_expansion", "restored", "committed"].includes(claimedState.phase)) {
-        try { renameSync(claim, original); owned = false } catch { return { status: "transition_conflict" } }
-        return releaseRegistry(claimedState, original)
-          ? { status: "invalid_phase", phase: claimedState.phase }
-          : { status: "registry_invalid", phase: claimedState.phase }
-      }
+    } catch {
+      return { status: "transition_conflict" }
     }
     const result = action(claim, original)
     try {
@@ -731,6 +705,7 @@ function cycleCancel(repoValue, stateFile, lease) {
 }
 
 function cycleRecover(repoValue, stateFile, lease) {
+  if (process.env.CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY !== "1") return { status: "recovery_not_authorized" }
   return withStateTransitionClaim(stateFile, (claimedState, originalState) => {
     const leased = leasedState(repoValue, claimedState, lease, ["authorized"], originalState)
     if (!leased.ok) return leased.result

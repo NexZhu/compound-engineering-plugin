@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test"
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "fs/promises"
 import { mkdtempSync } from "fs"
 import os from "os"
 import path from "path"
@@ -111,6 +111,18 @@ async function helper(repo: string, ...args: string[]): Promise<Record<string, a
   expect(result.code, result.stderr).toBe(0)
   expect(result.stdout.trim().split("\n"), result.stderr).toHaveLength(1)
   return JSON.parse(result.stdout)
+}
+async function helperWithEnv(repo: string, env: Record<string, string>, ...args: string[]): Promise<Record<string, any>> {
+  const result = await runWithEnv(["node", helperPath, ...args], repo, env)
+  expect(result.code, result.stderr).toBe(0)
+  expect(result.stdout.trim().split("\n"), result.stderr).toHaveLength(1)
+  return JSON.parse(result.stdout)
+}
+
+async function runWithEnv(command: string[], cwd: string, env: Record<string, string>) {
+  const proc = Bun.spawn(command, { cwd, env: { ...process.env, ...env, GIT_CONFIG_GLOBAL: neutralGitConfig, GIT_CONFIG_NOSYSTEM: "1" }, stdout: "pipe", stderr: "pipe" })
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+  return { code, stdout, stderr }
 }
 
 async function authorizeCycle(fixture: RepoFixture, cycle: AuthorizationFixture) {
@@ -1262,7 +1274,7 @@ describe("mutation lease dispatch gate", () => {
     const active = await authorizeCycle(fixture, cycle)
     const results = await Promise.all([
       helper(fixture.repo, "cycle-begin", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
-      helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
+      helperWithEnv(fixture.repo, { CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY: "1" }, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
     ])
     const statuses = results.map((result) => result.status)
     expect(statuses.filter((status) => status === "dispatched" || status === "recovered")).toHaveLength(1)
@@ -1287,14 +1299,6 @@ describe("mutation lease dispatch gate", () => {
     expect(results.some((result) => ["transition_conflict", "invalid_phase", "registry_invalid"].includes(result.status))).toBe(true)
   })
 
-  test("recovers an abandoned claimed state owned by a dead process", async () => {
-    const fixture = await createRepo()
-    const cycle = await writeAuthorizationFiles(fixture)
-    const active = await authorizeCycle(fixture, cycle)
-    const staleClaim = `${cycle.statePath}.transition.2147483647.stale`
-    await rename(cycle.statePath, staleClaim)
-    expect(await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "recovered" })
-  })
   test("allows only one concurrent transition claimant", async () => {
     const fixture = await createRepo()
     const cycle = await writeAuthorizationFiles(fixture)
@@ -1302,43 +1306,23 @@ describe("mutation lease dispatch gate", () => {
     await writeFile(`${cycle.statePath}.transition.lock`, JSON.stringify({ pid: 2147483647, started_at: 0 }), { mode: 0o600 })
     const results = await Promise.all([
       helper(fixture.repo, "cycle-begin", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
-      helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
+      helperWithEnv(fixture.repo, { CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY: "1" }, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id),
     ])
     expect(results.filter((result) => result.status === "dispatched" || result.status === "recovered")).toHaveLength(1)
     expect(results.some((result) => ["transition_conflict", "invalid_phase", "registry_invalid"].includes(result.status))).toBe(true)
   })
-  test("fails closed on multiple abandoned claimed states", async () => {
+
+
+
+
+
+
+  test("recovers only an unchanged same-invocation pre-begin lease", async () => {
     const fixture = await createRepo()
     const cycle = await writeAuthorizationFiles(fixture)
     const active = await authorizeCycle(fixture, cycle)
-    await rename(cycle.statePath, `${cycle.statePath}.transition.2147483647.one`)
-    await writeFile(`${cycle.statePath}.transition.2147483646.two`, JSON.stringify({ version: 2 }), { mode: 0o600 })
-    expect(await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "transition_conflict" })
-  })
-  test("completes registry release from a stale terminal claim", async () => {
-    const fixture = await createRepo()
-    const cycle = await writeAuthorizationFiles(fixture)
-    const active = await authorizeCycle(fixture, cycle)
-    const state = JSON.parse(await readFile(cycle.statePath, "utf8"))
-    state.phase = "abandoned"
-    state.terminal_reason = "recovered_before_begin"
-    await rename(cycle.statePath, `${cycle.statePath}.transition.2147483647.terminal`)
-    await writeFile(`${cycle.statePath}.transition.2147483647.terminal`, JSON.stringify(state), { mode: 0o600 })
-    expect(await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "invalid_phase", phase: "abandoned" })
-    const next = await writeAuthorizationFiles(fixture)
-    expect((await authorizeCycle(fixture, next)).status).not.toBe("lease_conflict")
-  })
-
-
-
-
-
-
-  test("recovers only an unchanged abandoned pre-begin lease", async () => {
-    const fixture = await createRepo()
-    const cycle = await writeAuthorizationFiles(fixture)
-    const active = await authorizeCycle(fixture, cycle)
-    expect(await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "recovered" })
+    expect(await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "recovery_not_authorized" })
+    expect(await helperWithEnv(fixture.repo, { CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY: "1" }, "cycle-recover", "--repo", fixture.repo, "--state", cycle.statePath, "--lease", active.lease_id)).toMatchObject({ status: "recovered" })
     const next = await writeAuthorizationFiles(fixture)
     const nextActive = await authorizeCycle(fixture, next)
     expect(nextActive.status).toBe("authorized")
@@ -1347,14 +1331,14 @@ describe("mutation lease dispatch gate", () => {
     expect(await helper(fixture.repo, "cycle-cancel", "--repo", fixture.repo, "--state", next.statePath, "--lease", nextActive.lease_id)).toMatchObject({ status: "canceled" })
     const dirtyActive = await authorizeCycle(fixture, dirtyCycle)
     await writeFile(fixture.activePath, "value=dirty-abandoned\n")
-    const rejected = await helper(fixture.repo, "cycle-recover", "--repo", fixture.repo, "--state", dirtyCycle.statePath, "--lease", dirtyActive.lease_id)
+    const rejected = await helperWithEnv(fixture.repo, { CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY: "1" }, "cycle-recover", "--repo", fixture.repo, "--state", dirtyCycle.statePath, "--lease", dirtyActive.lease_id)
     expect(rejected.status).not.toBe("recovered")
     expect(rejected.status).toBe("protocol_violation")
 
     const dispatchedFixture = await createRepo()
     const dispatchedCycle = await writeAuthorizationFiles(dispatchedFixture)
     const dispatched = await beginCycle(dispatchedFixture, dispatchedCycle)
-    expect(await helper(dispatchedFixture.repo, "cycle-recover", "--repo", dispatchedFixture.repo, "--state", dispatchedCycle.statePath, "--lease", dispatched.lease_id)).toMatchObject({ status: "invalid_phase", phase: "dispatched" })
+    expect(await helperWithEnv(dispatchedFixture.repo, { CE_CODE_REVIEW_LOOP_SAME_RUN_RECOVERY: "1" }, "cycle-recover", "--repo", dispatchedFixture.repo, "--state", dispatchedCycle.statePath, "--lease", dispatched.lease_id)).toMatchObject({ status: "invalid_phase", phase: "dispatched" })
 
     const blocked = await writeAuthorizationFiles(dispatchedFixture)
     expect((await authorizeCycle(dispatchedFixture, blocked)).status).toBe("lease_conflict")
